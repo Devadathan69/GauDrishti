@@ -263,15 +263,16 @@ function ZoneManager({ cooperativeId }) {
     });
     
     if (zoneToUpdate && zoneToUpdate.properties?.zone_id) {
-       try {
-         await api.updateZone({
-           village_id: villageId,
-           zone_geojson: zoneToUpdate,
-           schedule: zoneToUpdate.properties.schedule || DAY_KEYS.reduce((acc, d) => ({ ...acc, [d]: true }), {})
-         });
-       } catch (err) {
-         console.error('Failed to update zone name in DB', err);
-       }
+      try {
+        await api.updateZone({
+          village_id: villageId,
+          zone_geojson: zoneToUpdate,
+          schedule: zoneToUpdate.properties.schedule || DAY_KEYS.reduce((acc, d) => ({ ...acc, [d]: true }), {})
+        });
+      } catch (err) {
+        console.error('Failed to update zone name in DB', err);
+        return;
+      }
     }
     
     setZones(updatedZones);
