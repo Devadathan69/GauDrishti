@@ -8,7 +8,7 @@ window.type = '';
 
 import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
-import { Save, MapPin, Calendar, Plus, Edit2, Check, X } from 'lucide-react';
+import { Save, MapPin, Calendar, Plus, Edit2, Check, X, Trash2 } from 'lucide-react';
 import api from '../api/client';
 
 // Custom EditControl component since react-leaflet-draw is incompatible with modern Vite/React 19
@@ -197,6 +197,38 @@ function ZoneManager({ cooperativeId }) {
     }
     setEditingVillageId(null);
   };
+
+  const handleDeleteVillage = (id) => {
+    if (villages.length <= 1) {
+      alert("Cannot delete the last village.");
+      return;
+    }
+    if (window.confirm("Are you sure you want to delete this village and all its zones?")) {
+      const updatedVillages = villages.filter(v => v.id !== id);
+      setVillages(updatedVillages);
+      if (villageId === id) {
+        setVillageId(updatedVillages[0].id);
+      }
+      setEditingVillageId(null);
+    }
+  };
+
+  const handleDeleteZone = async (zone, name) => {
+    if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
+      const zoneIdToDelete = zone.properties?.zone_id || zone.id;
+      // In a real app we'd call an API here.
+      // API call placeholder: await api.deleteZone(zoneIdToDelete);
+      
+      // Update local state
+      const updatedZones = zones.filter((z, i) => {
+        const currId = z.properties?.zone_id || z.id;
+        if (zoneIdToDelete) return currId !== zoneIdToDelete;
+        // Fallback for newly created zones without IDs during session
+        return (z.properties?.name || `Zone ${i + 1}`) !== name;
+      });
+      setZones(updatedZones);
+    }
+  };
   
   const handleEditZoneStart = (zone, name) => {
     setEditingZoneId(zone.properties?.zone_id || zone.id || name); // fallback to name
@@ -317,6 +349,13 @@ function ZoneManager({ cooperativeId }) {
               >
                 <X size={14} />
               </button>
+              <button 
+                onClick={() => handleDeleteVillage(editingVillageId)}
+                style={{ background: '#FF4D4D', color: '#fff', border: 'none', borderRadius: '4px', padding: '0 8px', cursor: 'pointer' }}
+                title="Delete village"
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
           ) : (
             <div style={{ display: 'flex', gap: '4px' }}>
@@ -399,6 +438,13 @@ function ZoneManager({ cooperativeId }) {
                           title="Edit zone name"
                         >
                           <Edit2 size={12} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteZone(zone, name)} 
+                          style={{ background: 'none', border: 'none', color: '#FF4D4D', cursor: 'pointer', padding: '0', marginLeft: 'auto' }}
+                          title="Delete zone"
+                        >
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     )}
