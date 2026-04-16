@@ -2,6 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, GeoJSON, FeatureGroup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+
+// Fix for leaflet-draw bug: ReferenceError: type is not defined
+window.type = '';
+
 import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import { Save, MapPin, Calendar } from 'lucide-react';
