@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from enum import Enum
 
-from fastapi import FastAPI, HTTPException, Query, status
+from fastapi import FastAPI, HTTPException, Query, status, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -518,6 +518,101 @@ async def confirm_alert(payload: ConfirmPayload):
     # If treated or vet called, reset device to NORMAL
     if outcome in ("TREATED", "VET_CALLED"):
         db.table("devices").update({"alert_state": "NORMAL"}).eq("device_id", payload.device_id).execute()
+
+    return {"status": "ok", "alert_id": alert_id, "outcome": outcome}
+
+
+# --- POST /webhook/twilio ---
+@app.post("/webhook/twilio", tags=["Messaging"])
+async def twilio_whatsapp_webhook(From: str = Form(...), Body: str = Form(...)):
+    """
+    Twilio Webhook: Handles incoming WhatsApp messages from farmers.
+    Matches the sender's phone number to a farmer and updates the latest pending alert.
+    """
+    # Twilio From format: 'whatsapp:+919845001001'
+    phone_number = From.replace("whatsapp:", "")
+    reply_body = Body.strip()
+
+    db = get_supabase()
+
+    # 1. Find farmer by phone number
+    farmer_res = db.table("farmers").select("farmer_id, name").eq("whatsapp_number", phone_number).execute()
+    if not farmer_res.data:
+        print(f"[TWILIO WEBHOOK] Farmer not found for number: {phone_number}")
+        return {"status": "ignored", "reason": "farmer_not_found"}
+
+    farmer = farmer_res.data[0]
+    farmer_id = farmer["farmer_id"]
+
+    # 2. Map reply to outcome
+    outcome_map = {
+        "1": "TREATED",
+        "2": "VET_CALLED",
+        "3": "FALSE_ALARM",
+    }
+    outcome = outcome_map.get(reply_body)
+
+    if not outcome:
+        # If the reply isn't 1, 2, or 3, send a help message
+        help_msg = (
+            f"Hi {farmer['name']}, we didn't quite catch that. Please reply with:\n"
+            "1️⃣ Treated at home\n"
+            "2️⃣ Vet called\n"
+            "3️⃣ False alarm"
+        )
+        await send_whatsapp(phone_number, help_msg)
+        return {"status": "ok", "action": "help_sent"}
+
+    # 3. Find the most recent PENDING alert for any of this farmer's devices
+    # First, get farmer's devices
+    devices_res = db.table("devices").select("device_id, animal_name").eq("farmer_id", farmer_id).execute()
+    if not devices_res.data:
+        return {"status": "ignored", "reason": "no_devices_found"}
+    
+    device_ids = [d["device_id"] for d in devices_res.data]
+    device_names = {d["device_id"]: d["animal_name"] for d in devices_res.data}
+
+    # Find last pending alert for these devices
+    alert_res = (
+        db.table("alerts")
+        .select("alert_id, device_id")
+        .in_("device_id", device_ids)
+        .eq("outcome", "PENDING")
+        .order("timestamp", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    if not alert_res.data:
+        # No pending alert found
+        await send_whatsapp(phone_number, f"Thank you {farmer['name']}, but there are no pending alerts requiring confirmation at this time.")
+        return {"status": "ok", "action": "no_pending_alert"}
+
+    alert = alert_res.data[0]
+    alert_id = alert["alert_id"]
+    device_id = alert["device_id"]
+    animal_name = device_names.get(device_id, "your cattle")
+
+    # 4. Update the alert
+    now = datetime.now(timezone.utc).isoformat()
+    db.table("alerts").update({
+        "outcome": outcome,
+        "outcome_ts": now,
+        "vet_confirmed": outcome == "VET_CALLED",
+    }).eq("alert_id", alert_id).execute()
+
+    # 5. Reset device state to NORMAL if treated/vet called
+    if outcome in ("TREATED", "VET_CALLED"):
+        db.table("devices").update({"alert_state": "NORMAL"}).eq("device_id", device_id).execute()
+
+    # 6. Send confirmation back to farmer
+    outcome_labels = {
+        "TREATED": "marked as treated at home",
+        "VET_CALLED": "marked as vet called",
+        "FALSE_ALARM": "marked as false alarm",
+    }
+    confirm_msg = f"✅ Success: Alert for *{animal_name}* has been {outcome_labels.get(outcome)}."
+    await send_whatsapp(phone_number, confirm_msg)
 
     return {"status": "ok", "alert_id": alert_id, "outcome": outcome}
 

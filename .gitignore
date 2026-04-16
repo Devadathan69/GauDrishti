@@ -50,3 +50,7 @@ tmp/
 node_modules/
 dist/
 dist-ssr/
+test.py
+test_api.py
+*.bak
+*.swp
