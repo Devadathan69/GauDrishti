@@ -820,6 +820,8 @@ async def update_alert(alert_id: str, payload: AlertUpdatePayload):
             db.table("devices").update({"alert_state": "NORMAL"}).eq("device_id", device_id).execute()
             
         return {"status": "ok", "alert_id": alert_id, "outcome": payload.outcome.value}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update alert: {e}")
 
